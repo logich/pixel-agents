@@ -6,6 +6,11 @@ export const TOOL_DONE_DELAY_MS = 300;
 export const PERMISSION_TIMER_DELAY_MS = 7000;
 export const TEXT_IDLE_DELAY_MS = 5000;
 export const TERMINALLESS_CLEANUP_DELAY_MS = 3000;
+// Max time (ms) to wait for a restored agent's JSONL file before removing the agent as stale.
+export const RESTORE_JSONL_TIMEOUT_MS = 30_000;
+// Inactivity timeout (ms) for HTTP bridge agents — if no activity arrives within this window,
+// the agent is auto-stopped as a safety net in case the agentStop hook never fires.
+export const HTTP_AGENT_INACTIVITY_TIMEOUT_MS = 120_000;
 
 // ── Display Truncation ──────────────────────────────────────
 export const BASH_COMMAND_DISPLAY_MAX_LENGTH = 30;
@@ -41,3 +46,11 @@ export const WORKSPACE_KEY_AGENTS = 'pixel-agents.agents';
 export const WORKSPACE_KEY_AGENT_SEATS = 'pixel-agents.agentSeats';
 export const WORKSPACE_KEY_LAYOUT = 'pixel-agents.layout';
 export const TERMINAL_NAME_PREFIX = 'Claude Code';
+
+// ── HTTP Bridge ──────────────────────────────────────────────
+// Added for the Kiro HTTP bridge feature: port file location and request size limit.
+// Port file dir/name define where the server writes its port for hook discovery.
+// Max body bytes caps incoming request payloads to prevent resource exhaustion (Req 2.1, 11.3).
+export const HTTP_BRIDGE_PORT_FILE_DIR = '.pixel-agents';
+export const HTTP_BRIDGE_PORT_FILE_NAME = 'kiro-port';
+export const HTTP_BRIDGE_MAX_BODY_BYTES = 65_536; // 64 KB

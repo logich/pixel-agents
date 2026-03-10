@@ -13,7 +13,7 @@ This is the source code for the free [Pixel Agents extension for VS Code](https:
 
 - **One agent, one character** — every Claude Code terminal or Kiro agent gets its own animated character
 - **Live activity tracking** — characters animate based on what the agent is actually doing (writing, reading, running commands)
-- **Kiro support** — a bridge script and hook system lets Kiro agents appear as pixel characters without a terminal
+- **Kiro support** — an HTTP bridge server lets Kiro agents appear as pixel characters without a terminal, with instant event delivery via curl hooks
 - **Office layout editor** — design your office with floors, walls, and furniture using a built-in editor
 - **Speech bubbles** — visual indicators when an agent is waiting for input or needs permission
 - **Sound notifications** — optional chime when an agent finishes its turn
@@ -85,7 +85,7 @@ The extension will still work without the tileset — you'll get the default cha
 
 Pixel Agents watches Claude Code's JSONL transcript files to track what each agent is doing. When an agent uses a tool (like writing a file or running a command), the extension detects it and updates the character's animation accordingly. No modifications to Claude Code are needed — it's purely observational.
 
-For Kiro, a bridge script (`pixel-agents-bridge.sh`) translates Kiro hook events into the same JSONL format. Four hooks fire at key lifecycle points (prompt submit, tool start, tool done, agent stop) and the extension picks up the activity seamlessly. See [KIRO.md](KIRO.md) for the full setup guide.
+For Kiro, the extension runs a local HTTP server on `127.0.0.1` that receives tool lifecycle events directly from Kiro hooks via curl. Four hooks fire at key lifecycle points (prompt submit, tool start, tool done, agent stop) and POST JSON to the server — no intermediate files, no polling latency. The server port is written to `~/.pixel-agents/kiro-port` so hooks can discover it at runtime. See [KIRO.md](KIRO.md) for the full setup guide.
 
 The webview runs a lightweight game loop with canvas rendering, BFS pathfinding, and a character state machine (idle → walk → type/read). Everything is pixel-perfect at integer zoom levels.
 
@@ -98,7 +98,7 @@ The webview runs a lightweight game loop with canvas rendering, BFS pathfinding,
 
 - **Agent-terminal sync** — the way agents are connected to Claude Code terminal instances is not super robust and sometimes desyncs, especially when terminals are rapidly opened/closed or restored across sessions.
 - **Heuristic-based status detection** — Claude Code's JSONL transcript format does not provide clear signals for when an agent is waiting for user input or when it has finished its turn. The current detection is based on heuristics (idle timers, turn-duration events) and often misfires — agents may briefly show the wrong status or miss transitions.
-- **Kiro tool names** — Kiro's `runCommand` hooks don't pass tool context to the bridge script, so Kiro agent activity shows as "Working" rather than specific tool names like "Reading src/main.ts". Claude Code agents get full tool name display since the extension reads their JSONL transcripts directly.
+- **Kiro tool names** — Kiro agents now get full tool name display through the HTTP bridge (e.g., "Reading", "Editing", "Running: npm test"). The bridge maps Kiro tool names like `readFile`, `editCode`, `executeBash` to their display equivalents. Unknown or unmapped tools show as "Working".
 - **Windows-only testing** — the extension has only been tested on Windows 11. It may work on macOS or Linux, but there could be unexpected issues with file watching, paths, or terminal behavior on those platforms.
 
 ## Roadmap

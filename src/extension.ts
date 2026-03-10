@@ -28,8 +28,16 @@ export function activate(context: vscode.ExtensionContext) {
 	// Kiro bridge: register commands and offer setup if needed
 	registerBridgeCommands(context);
 	checkAndOfferBridgeSetup(context);
+
+	// HTTP Bridge — start the local HTTP server for Kiro hook integration (Req 1.1)
+	provider.startHttpBridge().catch((err) => {
+		console.error('[Pixel Agents] Failed to start HTTP bridge:', err);
+	});
+
 }
 
 export function deactivate() {
+	// HTTP Bridge — stop the server and remove port file on deactivation (Req 1.3)
+	providerInstance?.stopHttpBridge().catch(() => {});
 	providerInstance?.dispose();
 }

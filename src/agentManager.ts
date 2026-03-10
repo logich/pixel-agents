@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import type { AgentState, PersistedAgent } from './types.js';
 import { cancelWaitingTimer, cancelPermissionTimer } from './timerManager.js';
 import { startFileWatching, readNewLines, ensureProjectScan } from './fileWatcher.js';
-import { JSONL_POLL_INTERVAL_MS, TERMINAL_NAME_PREFIX, WORKSPACE_KEY_AGENTS, WORKSPACE_KEY_AGENT_SEATS } from './constants.js';
+import { JSONL_POLL_INTERVAL_MS, RESTORE_JSONL_TIMEOUT_MS, TERMINAL_NAME_PREFIX, WORKSPACE_KEY_AGENTS, WORKSPACE_KEY_AGENT_SEATS } from './constants.js';
 import { migrateAndLoadLayout } from './layoutPersistence.js';
 
 export function getProjectDirPath(cwd?: string): string | null {
@@ -195,6 +195,9 @@ export function restoreAgents(
 			continue;
 		}
 
+		// FIX: Restored agents should default to waiting (idle) since we skip
+		// to the end of the JSONL file and won't see past turn_duration records.
+		// They'll flip to active when new tool activity is detected.
 		const agent: AgentState = {
 			id: p.id,
 			terminalRef: terminal,
@@ -207,7 +210,7 @@ export function restoreAgents(
 			activeToolNames: new Map(),
 			activeSubagentToolIds: new Map(),
 			activeSubagentToolNames: new Map(),
-			isWaiting: false,
+			isWaiting: true,
 			permissionSent: false,
 			hadToolsInTurn: false,
 			folderName: p.folderName,
@@ -234,7 +237,9 @@ export function restoreAgents(
 				agent.fileOffset = stat.size;
 				startFileWatching(p.id, p.jsonlFile, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, webview);
 			} else {
-				// Poll for the file to appear
+				// Poll for the file to appear, with a timeout to remove stale agents
+				// whose JSONL file never materializes (e.g. session ended, /clear was run).
+				const restoreStartTime = Date.now();
 				const pollTimer = setInterval(() => {
 					try {
 						if (fs.existsSync(agent.jsonlFile)) {
@@ -244,6 +249,14 @@ export function restoreAgents(
 							const stat = fs.statSync(agent.jsonlFile);
 							agent.fileOffset = stat.size;
 							startFileWatching(p.id, agent.jsonlFile, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, webview);
+						} else if (Date.now() - restoreStartTime > RESTORE_JSONL_TIMEOUT_MS) {
+							// Timed out waiting for JSONL — remove stale agent
+							console.log(`[Pixel Agents] Restored agent ${p.id}: JSONL not found after ${RESTORE_JSONL_TIMEOUT_MS}ms, removing stale agent`);
+							clearInterval(pollTimer);
+							jsonlPollTimers.delete(p.id);
+							agents.delete(p.id);
+							doPersist();
+							webview?.postMessage({ type: 'agentClosed', id: p.id });
 						}
 					} catch { /* file may not exist yet */ }
 				}, JSONL_POLL_INTERVAL_MS);

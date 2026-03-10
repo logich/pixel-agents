@@ -15,6 +15,9 @@ import {
 import { ensureProjectScan } from './fileWatcher.js';
 import { loadFurnitureAssets, sendAssetsToWebview, loadFloorTiles, sendFloorTilesToWebview, loadWallTiles, sendWallTilesToWebview, loadCharacterSprites, sendCharacterSpritesToWebview, loadDefaultLayout } from './assetLoader.js';
 import { WORKSPACE_KEY_AGENT_SEATS, GLOBAL_KEY_SOUND_ENABLED, TERMINALLESS_CLEANUP_DELAY_MS } from './constants.js';
+// HTTP Bridge — imported for Kiro hook integration (Req 1.1)
+import { createHttpBridgeServer } from './httpBridgeServer.js';
+import type { HttpBridgeServer } from './httpBridgeServer.js';
 import { writeLayoutToFile, readLayoutFromFile, watchLayoutFile } from './layoutPersistence.js';
 import type { LayoutWatcher } from './layoutPersistence.js';
 
@@ -44,6 +47,9 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
 	// Cross-window layout sync
 	layoutWatcher: LayoutWatcher | null = null;
+
+	// HTTP Bridge — local HTTP server for Kiro hook integration (Req 1.1)
+	private httpBridgeServer: HttpBridgeServer | null = null;
 
 	constructor(private readonly context: vscode.ExtensionContext) {}
 
@@ -355,9 +361,39 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 		});
 	}
 
+	/**
+	 * Start the HTTP bridge server for Kiro hook integration.
+	 * Creates the server with the provider's existing agent state refs, then starts listening.
+	 * Called from extension.ts activate(). (Req 1.1)
+	 */
+	async startHttpBridge(): Promise<void> {
+		this.httpBridgeServer = createHttpBridgeServer({
+			nextAgentIdRef: this.nextAgentId,
+			agents: this.agents,
+			activeAgentIdRef: this.activeAgentId,
+			getWebview: () => this.webview,
+			persistAgents: this.persistAgents,
+			onTerminalLessTurnEnd: this.onTerminalLessTurnEnd,
+			waitingTimers: this.waitingTimers,
+			permissionTimers: this.permissionTimers,
+		});
+		await this.httpBridgeServer.start();
+	}
+
+	/**
+	 * Stop the HTTP bridge server and remove the port file.
+	 * Called from extension.ts deactivate() and dispose(). (Req 1.3)
+	 */
+	async stopHttpBridge(): Promise<void> {
+		await this.httpBridgeServer?.stop();
+		this.httpBridgeServer = null;
+	}
+
 	dispose() {
 		this.layoutWatcher?.dispose();
 		this.layoutWatcher = null;
+		// HTTP Bridge — stop server on dispose (Req 1.3)
+		void this.stopHttpBridge();
 		for (const timer of this.terminalLessCleanupTimers.values()) {
 			clearTimeout(timer);
 		}

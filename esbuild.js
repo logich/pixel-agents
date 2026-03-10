@@ -27,22 +27,6 @@ function copyAssets() {
 }
 
 /**
- * Copy bridge script to dist/bridge/ so the VSIX can scaffold it into workspaces
- */
-function copyBridgeScript() {
-	const srcFile = path.join(__dirname, 'scripts', 'kiro-bridge', 'pixel-agents-bridge.sh');
-	const dstDir = path.join(__dirname, 'dist', 'bridge');
-
-	if (fs.existsSync(srcFile)) {
-		fs.mkdirSync(dstDir, { recursive: true });
-		fs.copyFileSync(srcFile, path.join(dstDir, 'pixel-agents-bridge.sh'));
-		console.log('✓ Copied bridge script → dist/bridge/');
-	} else {
-		console.log('ℹ️  Bridge script not found (optional)');
-	}
-}
-
-/**
  * @type {import('esbuild').Plugin}
  */
 const esbuildProblemMatcherPlugin = {
@@ -86,9 +70,8 @@ async function main() {
 	} else {
 		await ctx.rebuild();
 		await ctx.dispose();
-		// Copy assets and bridge script after build
+		// Copy assets after build
 		copyAssets();
-		copyBridgeScript();
 	}
 }
 

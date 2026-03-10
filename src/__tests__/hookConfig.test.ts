@@ -1,16 +1,26 @@
 /**
  * Unit tests for Kiro hook configuration validity.
  *
- * Reads each hook JSON file and validates structure, event types,
- * command invocations, toolTypes filters, and enabled state.
+ * [Updated for HTTP bridge] Validates the hook definitions returned by
+ * getHookDefinitions() rather than reading files from disk. The hooks
+ * are now HTTP-based curl commands instead of bridge script invocations.
  *
  * Validates: Requirements 7.1–7.5, 8.1
  */
-import { describe, it, expect } from "vitest";
-import * as fs from "fs";
-import * as path from "path";
+import { describe, it, expect, vi } from "vitest";
 
-const HOOKS_DIR = path.resolve(__dirname, "../../.kiro/hooks");
+// Mock vscode module before importing anything that depends on it
+vi.mock("vscode", () => ({
+	workspace: { workspaceFolders: [] },
+	window: {
+		showInformationMessage: vi.fn(),
+		showErrorMessage: vi.fn(),
+		showWarningMessage: vi.fn(),
+	},
+	commands: { registerCommand: vi.fn() },
+}), { virtual: true });
+
+import { getHookDefinitions } from "../kiroBridgeSetup.js";
 
 interface HookConfig {
   name: string;
@@ -27,45 +37,40 @@ interface HookConfig {
   };
 }
 
-const HOOK_FILES = [
+const EXPECTED_HOOKS = [
   {
     filename: "pixel-agents-prompt.kiro.hook",
     expectedEventType: "promptSubmit",
-    expectedCommand: "init",
+    expectedEndpoint: "/prompt-start",
   },
   {
     filename: "pixel-agents-tool-start.kiro.hook",
     expectedEventType: "preToolUse",
-    expectedCommand: "tool-start",
+    expectedEndpoint: "/tool-start",
   },
   {
     filename: "pixel-agents-tool-done.kiro.hook",
     expectedEventType: "postToolUse",
-    expectedCommand: "tool-done",
+    expectedEndpoint: "/tool-done",
   },
   {
     filename: "pixel-agents-agent-stop.kiro.hook",
     expectedEventType: "agentStop",
-    expectedCommand: "agent-stop",
+    expectedEndpoint: "/agent-stop",
   },
 ];
 
 describe("Hook configuration validity", () => {
-  const hooks: Array<{ filename: string; config: HookConfig; expectedEventType: string; expectedCommand: string }> = [];
+  const hookDefs = getHookDefinitions();
+  const hooks = EXPECTED_HOOKS.map((h) => ({
+    ...h,
+    config: hookDefs[h.filename] as unknown as HookConfig,
+  }));
 
-  // Parse all hook files upfront
-  for (const hookDef of HOOK_FILES) {
-    const filePath = path.join(HOOKS_DIR, hookDef.filename);
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const config: HookConfig = JSON.parse(raw);
-    hooks.push({ ...hookDef, config });
-  }
-
-  it("each hook file is valid JSON", () => {
-    for (const hookDef of HOOK_FILES) {
-      const filePath = path.join(HOOKS_DIR, hookDef.filename);
-      const raw = fs.readFileSync(filePath, "utf-8");
-      expect(() => JSON.parse(raw), `${hookDef.filename} should be valid JSON`).not.toThrow();
+  it("getHookDefinitions returns all 4 hook files", () => {
+    expect(Object.keys(hookDefs)).toHaveLength(4);
+    for (const h of EXPECTED_HOOKS) {
+      expect(hookDefs).toHaveProperty(h.filename);
     }
   });
 
@@ -92,12 +97,13 @@ describe("Hook configuration validity", () => {
     }
   });
 
-  it("then.command contains the correct bridge script invocation", () => {
-    for (const { filename, config, expectedCommand } of hooks) {
-      expect(
-        config.then.command,
-        `${filename} should invoke bridge with ${expectedCommand}`,
-      ).toContain(`pixel-agents-bridge.sh ${expectedCommand}`);
+  it("then.command uses curl to POST to the correct HTTP endpoint", () => {
+    for (const { filename, config, expectedEndpoint } of hooks) {
+      expect(config.then.command, `${filename} should use curl`).toContain("curl");
+      expect(config.then.command, `${filename} should target ${expectedEndpoint}`).toContain(
+        `http://127.0.0.1:$PORT${expectedEndpoint}`,
+      );
+      expect(config.then.command, `${filename} should have || true`).toMatch(/\|\| true\s*$/);
     }
   });
 
@@ -129,7 +135,6 @@ describe("Hook configuration validity", () => {
       if (config.enabled !== undefined) {
         expect(config.enabled, `${filename} should be enabled`).toBe(true);
       }
-      // If enabled is absent, the hook is considered enabled by default — that's valid
     }
   });
 });

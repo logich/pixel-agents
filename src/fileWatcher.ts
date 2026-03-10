@@ -247,48 +247,6 @@ function scanForNewJsonlFiles(
 	}
 }
 
-function adoptTerminalForFile(
-	terminal: vscode.Terminal,
-	jsonlFile: string,
-	projectDir: string,
-	nextAgentIdRef: { current: number },
-	agents: Map<number, AgentState>,
-	activeAgentIdRef: { current: number | null },
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	webview: vscode.Webview | undefined,
-	persistAgents: () => void,
-): void {
-	const id = nextAgentIdRef.current++;
-	const agent: AgentState = {
-		id,
-		terminalRef: terminal,
-		projectDir,
-		jsonlFile,
-		fileOffset: 0,
-		lineBuffer: '',
-		activeToolIds: new Set(),
-		activeToolStatuses: new Map(),
-		activeToolNames: new Map(),
-		activeSubagentToolIds: new Map(),
-		activeSubagentToolNames: new Map(),
-		isWaiting: false,
-		permissionSent: false,
-		hadToolsInTurn: false,
-	};
-
-	agents.set(id, agent);
-	activeAgentIdRef.current = id;
-	persistAgents();
-
-	console.log(`[Pixel Agents] Agent ${id}: adopted terminal "${terminal.name}" for ${path.basename(jsonlFile)}`);
-	webview?.postMessage({ type: 'agentCreated', id });
-
-	startFileWatching(id, jsonlFile, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, webview);
-	readNewLines(id, agents, waitingTimers, permissionTimers, webview);
-}
 
 export function createTerminalLessAgent(
 	jsonlFile: string,
@@ -334,40 +292,3 @@ export function createTerminalLessAgent(
 }
 
 
-export function reassignAgentToFile(
-	agentId: number,
-	newFilePath: string,
-	agents: Map<number, AgentState>,
-	fileWatchers: Map<number, fs.FSWatcher>,
-	pollingTimers: Map<number, ReturnType<typeof setInterval>>,
-	waitingTimers: Map<number, ReturnType<typeof setTimeout>>,
-	permissionTimers: Map<number, ReturnType<typeof setTimeout>>,
-	webview: vscode.Webview | undefined,
-	persistAgents: () => void,
-): void {
-	const agent = agents.get(agentId);
-	if (!agent) return;
-
-	// Stop old file watching
-	fileWatchers.get(agentId)?.close();
-	fileWatchers.delete(agentId);
-	const pt = pollingTimers.get(agentId);
-	if (pt) { clearInterval(pt); }
-	pollingTimers.delete(agentId);
-	try { fs.unwatchFile(agent.jsonlFile); } catch { /* ignore */ }
-
-	// Clear activity
-	cancelWaitingTimer(agentId, waitingTimers);
-	cancelPermissionTimer(agentId, permissionTimers);
-	clearAgentActivity(agent, agentId, permissionTimers, webview);
-
-	// Swap to new file
-	agent.jsonlFile = newFilePath;
-	agent.fileOffset = 0;
-	agent.lineBuffer = '';
-	persistAgents();
-
-	// Start watching new file
-	startFileWatching(agentId, newFilePath, agents, fileWatchers, pollingTimers, waitingTimers, permissionTimers, webview);
-	readNewLines(agentId, agents, waitingTimers, permissionTimers, webview);
-}

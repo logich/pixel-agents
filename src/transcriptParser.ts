@@ -55,9 +55,15 @@ export function processTranscriptLine(
 ): void {
 	const agent = agents.get(agentId);
 	if (!agent) return;
+	// JSON.parse returns `any` — narrowed via runtime checks below
+	let record: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 	try {
-		const record = JSON.parse(line);
-
+		record = JSON.parse(line);
+	} catch {
+		// Ignore malformed JSON lines
+		return;
+	}
+	try {
 		if (record.type === 'assistant' && Array.isArray(record.message?.content)) {
 			const blocks = record.message.content as Array<{
 				type: string; id?: string; name?: string; input?: Record<string, unknown>;
@@ -186,8 +192,9 @@ export function processTranscriptLine(
 				onTerminalLessTurnEnd(agentId);
 			}
 		}
-	} catch {
-		// Ignore malformed lines
+	} catch (e) {
+		// Log unexpected errors in transcript processing (JSON parse errors handled above)
+		console.log(`[Pixel Agents] Agent ${agentId}: error processing transcript line: ${e}`);
 	}
 }
 
@@ -292,7 +299,7 @@ function processProgressRecord(
 						parentToolId,
 						toolId,
 					});
-				}, 300);
+				}, TOOL_DONE_DELAY_MS);
 			}
 		}
 		// If there are still active non-exempt sub-agent tools, restart the permission timer

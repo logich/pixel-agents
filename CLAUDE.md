@@ -16,6 +16,10 @@ src/                          — Extension backend (Node.js, VS Code API)
   transcriptParser.ts         — JSONL parsing: tool_use/tool_result → webview messages
   timerManager.ts             — Waiting/permission timer logic
   types.ts                    — Shared interfaces (AgentState, PersistedAgent)
+  httpBridgeServer.ts         — HTTP server lifecycle: start/stop, port file, request routing (Kiro hook integration)
+  httpBridgeHandlers.ts       — Endpoint handlers: /prompt-start, /tool-start, /tool-done, /agent-stop
+  httpToolNameMap.ts          — Kiro tool name → Claude Code tool name mapping for display formatting
+  kiroBridgeSetup.ts          — Hook scaffolding (HTTP-based curl hooks), old bridge migration
 
 webview-ui/src/               — React + TypeScript (Vite)
   constants.ts                — All webview magic numbers/strings (grid, animation, rendering, camera, zoom, editor, game logic, notification sound)
@@ -166,7 +170,7 @@ Toggle via "Layout" button. Tools: SELECT (default), Floor paint, Wall paint, Er
 - User prompt `content` can be string (text) or array (tool_results) — handle both
 - `/clear` creates NEW JSONL file (old file just stops)
 - `--output-format stream-json` needs non-TTY stdin — can't use with VS Code terminals
-- Hook-based IPC failed (hooks captured at startup, env vars don't propagate). JSONL watching works
+- Hook-based IPC failed (hooks captured at startup, env vars don't propagate). JSONL watching works for Claude Code terminals. HTTP bridge (httpBridgeServer.ts) works for Kiro — hooks POST JSON via curl to a local HTTP server on 127.0.0.1, port written to ~/.pixel-agents/kiro-port
 - PNG→SpriteData: pngjs for RGBA buffer, alpha threshold 128
 - OfficeCanvas selection changes are imperative (`editorState.selectedFurnitureUid`); must call `onEditorSelectionChange()` to trigger React re-render for toolbar
 
